@@ -8,6 +8,9 @@ export interface WireGridSourceLocation {
 
 export type WireGridEdit =
   | {
+      kind: "jsx-delete"
+    }
+  | {
       kind: "jsx-text"
       value: string
     }

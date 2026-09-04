@@ -50,11 +50,15 @@ export function instrumentSource({
     })
     const editableStyleProps = getEditableStyleProps(node)
     const editableClassTokens = getEditableClassTokens(node)
+    const isNativeElement =
+      t.isJSXIdentifier(openingElement.name) &&
+      openingElement.name.name === openingElement.name.name.toLowerCase()
 
     if (
       !metadata &&
       editableStyleProps.length === 0 &&
-      editableClassTokens.length === 0
+      editableClassTokens.length === 0 &&
+      !isNativeElement
     ) {
       return
     }
@@ -70,7 +74,14 @@ export function instrumentSource({
     addAttribute(openingElement, "data-wg-id", `${relativeFilePath}:${line}:${column}`)
     addAttribute(openingElement, "data-wg-line", String(line))
     addAttribute(openingElement, "data-wg-column", String(column))
-    addAttribute(openingElement, "data-wg-kind", metadata?.kind ?? "jsx-style")
+    addAttribute(
+      openingElement,
+      "data-wg-kind",
+      metadata?.kind ??
+        (editableStyleProps.length > 0 || editableClassTokens.length > 0
+          ? "jsx-style"
+          : "jsx-element")
+    )
 
     if (metadata?.prop) {
       addAttribute(openingElement, "data-wg-prop", metadata.prop)
@@ -234,9 +245,17 @@ function addAttribute(
     return
   }
 
-  openingElement.attributes.push(
-    t.jsxAttribute(t.jsxIdentifier(name), t.stringLiteral(value))
+  const attribute = t.jsxAttribute(t.jsxIdentifier(name), t.stringLiteral(value))
+  const spreadIndex = openingElement.attributes.findIndex((candidate) =>
+    t.isJSXSpreadAttribute(candidate)
   )
+
+  if (spreadIndex === -1) {
+    openingElement.attributes.push(attribute)
+    return
+  }
+
+  openingElement.attributes.splice(spreadIndex, 0, attribute)
 }
 
 function hasAttribute(openingElement: t.JSXOpeningElement, name: string) {

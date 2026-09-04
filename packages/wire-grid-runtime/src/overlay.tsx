@@ -215,6 +215,21 @@ function EditPopover({
     }
   }
 
+  function createDeleteRequest(preview = false) {
+    return {
+      source: {
+        file: selection.source.file,
+        id: selection.source.id,
+        line: selection.source.line,
+        column: selection.source.column
+      },
+      edit: {
+        kind: "jsx-delete"
+      },
+      preview
+    }
+  }
+
   async function postEdit(body: unknown) {
     const response = await fetch(editEndpoint, {
       body: JSON.stringify(body),
@@ -301,6 +316,22 @@ function EditPopover({
     setDiff("")
     setUndoAvailable(true)
     setStatus("Saved")
+  }
+
+  async function deleteElement() {
+    setStatus("Deleting")
+
+    const result = await postEdit(createDeleteRequest())
+
+    if (!result.ok) {
+      setStatus(result.message ?? "Delete failed")
+      return
+    }
+
+    selection.element.remove()
+    setDiff("")
+    setUndoAvailable(true)
+    setStatus("Deleted")
   }
 
   async function undoLastEdit() {
@@ -428,6 +459,14 @@ function EditPopover({
             </button>
           </>
         ) : null}
+        <button
+          aria-label="Delete selected component"
+          onClick={deleteElement}
+          style={deleteButtonStyle}
+          type="button"
+        >
+          Delete
+        </button>
         {undoAvailable ? (
           <button onClick={undoLastEdit} style={secondaryButtonStyle} type="button">
             Undo
@@ -632,6 +671,12 @@ const secondaryButtonStyle = {
   fontSize: 13,
   fontWeight: 700,
   padding: "7px 10px"
+} satisfies CSSProperties
+
+const deleteButtonStyle = {
+  ...secondaryButtonStyle,
+  borderColor: "#fecaca",
+  color: "#b91c1c"
 } satisfies CSSProperties
 
 const diffStyle = {

@@ -11,6 +11,7 @@ export {
   applyClassTokenReplaceEdit,
   applyInlineStyleEdit,
   applyJsxAttributeStringEdit,
+  applyJsxDeleteEdit,
   applyJsxTextEdit,
   previewEdit
 } from "./edit/apply-edit.js"
