@@ -17,6 +17,7 @@ export default defineConfig({
         items: [
           { text: "Getting Started", link: "/guide/getting-started" },
           { text: "Next.js Integration", link: "/guide/next" },
+          { text: "React + Vite Integration", link: "/guide/vite" },
           { text: "Adapter Foundation", link: "/guide/adapters" },
           { text: "Browser Editing Tutorial", link: "/guide/tutorial" },
           { text: "Release Workflow", link: "/guide/releases" }

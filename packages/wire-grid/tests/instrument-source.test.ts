@@ -3,6 +3,23 @@ import { describe, expect, it } from "vitest"
 import { instrumentSource } from "../src/instrumentation/instrument-source.js"
 
 describe("instrumentSource", () => {
+  it("adds deletion metadata to native JSX elements without editable text", () => {
+    const code = `export function Page() {
+  return <div><img alt="Demo" /></div>
+}
+`
+
+    const result = instrumentSource({
+      code,
+      filePath: "/repo/app/src/Page.tsx",
+      rootDir: "/repo/app"
+    })
+
+    expect(result).toContain(`data-wg-file="src/Page.tsx"`)
+    expect(result).toContain(`data-wg-kind="jsx-element"`)
+    expect(result.match(/data-wg-id=/g)).toHaveLength(2)
+  })
+
   it("adds Wire Grid metadata to native JSX elements with text", () => {
     const code = `export default function Page() {
   return <h1>Hello</h1>

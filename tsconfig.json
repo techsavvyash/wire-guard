@@ -3,7 +3,8 @@
   "references": [
     { "path": "./packages/wire-grid" },
     { "path": "./packages/wire-grid-runtime" },
-    { "path": "./packages/wire-grid-next" }
+    { "path": "./packages/wire-grid-next" },
+    { "path": "./packages/wire-grid-vite" }
   ],
   "compilerOptions": {
     "target": "ES2022",

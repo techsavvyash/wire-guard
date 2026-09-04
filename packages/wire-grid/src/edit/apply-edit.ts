@@ -36,6 +36,7 @@ export async function applyEdit({ rootDir, request }: ApplyEditOptions) {
 
 export async function previewEdit({ rootDir, request }: ApplyEditOptions) {
   if (
+    request.edit.kind !== "jsx-delete" &&
     request.edit.kind !== "jsx-text" &&
     request.edit.kind !== "jsx-attribute-string" &&
     request.edit.kind !== "class-token-replace" &&
@@ -81,6 +82,8 @@ export async function previewEdit({ rootDir, request }: ApplyEditOptions) {
 
 function applyEditToCode(code: string, request: WireGridEditRequest) {
   switch (request.edit.kind) {
+    case "jsx-delete":
+      return applyJsxDeleteEdit(code, request)
     case "jsx-attribute-string":
       return applyJsxAttributeStringEdit(code, request)
     case "class-token-replace":
@@ -90,6 +93,239 @@ function applyEditToCode(code: string, request: WireGridEditRequest) {
     case "jsx-text":
       return applyJsxTextEdit(code, request)
   }
+}
+
+interface AstNodePath {
+  index?: number
+  key: string
+  node: t.Node
+  parent: t.Node
+  parentPath?: AstNodePath
+}
+
+export function applyJsxDeleteEdit(
+  code: string,
+  request: WireGridEditRequest
+) {
+  if (request.edit.kind !== "jsx-delete") {
+    return unsupported(`Unsupported edit kind: ${request.edit.kind}`)
+  }
+
+  if (!request.source.id) {
+    return unsupported("Missing source element id.")
+  }
+
+  const ast = parse(code, {
+    parser: babelTsParser
+  })
+  const targetPath = findTargetElementPath(ast, request)
+
+  if (!targetPath) {
+    return unsupported("Could not find the selected JSX element.")
+  }
+
+  if (!deleteJsxElement(targetPath)) {
+    return unsupported(
+      "The selected JSX element cannot be deleted without invalidating its source."
+    )
+  }
+
+  return {
+    ok: true,
+    code: print(ast).code
+  } as const
+}
+
+function deleteJsxElement(targetPath: AstNodePath) {
+  const paths = getAncestorPaths(targetPath)
+
+  if (removeJsxChild(targetPath)) {
+    return true
+  }
+
+  const conditionalPath = paths.find(
+    (path) =>
+      t.isConditionalExpression(path.parent) &&
+      (path.key === "consequent" || path.key === "alternate")
+  )
+
+  if (conditionalPath) {
+    setNodePath(conditionalPath, t.nullLiteral())
+    return true
+  }
+
+  const logicalPath = paths.find(
+    (path) => t.isLogicalExpression(path.parent) && path.key === "right"
+  )
+
+  if (logicalPath) {
+    const containerPath = paths.find((path) =>
+      t.isJSXExpressionContainer(path.node)
+    )
+
+    if (containerPath && removeJsxChild(containerPath)) {
+      return true
+    }
+
+    setNodePath(logicalPath, t.nullLiteral())
+    return true
+  }
+
+  const mapBodyPath = paths.find(
+    (path) =>
+      t.isArrowFunctionExpression(path.parent) &&
+      path.key === "body" &&
+      isMapCallback(path.parent, path.parentPath)
+  )
+
+  if (mapBodyPath) {
+    const containerPath = paths.find((path) =>
+      t.isJSXExpressionContainer(path.node)
+    )
+
+    if (containerPath && removeJsxChild(containerPath)) {
+      return true
+    }
+
+    setNodePath(mapBodyPath, t.nullLiteral())
+    return true
+  }
+
+  const expressionPath = paths.find(
+    (path) =>
+      t.isJSXExpressionContainer(path.parent) && path.key === "expression"
+  )
+
+  if (expressionPath && removeJsxChild(expressionPath.parentPath)) {
+    return true
+  }
+
+  const replaceablePath = paths.find(
+    (path) =>
+      (t.isReturnStatement(path.parent) && path.key === "argument") ||
+      (t.isVariableDeclarator(path.parent) && path.key === "init") ||
+      (t.isArrowFunctionExpression(path.parent) && path.key === "body") ||
+      (t.isJSXExpressionContainer(path.parent) && path.key === "expression")
+  )
+
+  if (replaceablePath) {
+    setNodePath(replaceablePath, t.nullLiteral())
+    return true
+  }
+
+  return false
+}
+
+function getAncestorPaths(path: AstNodePath) {
+  const paths: AstNodePath[] = []
+  let current: AstNodePath | undefined = path
+
+  while (current) {
+    paths.push(current)
+    current = current.parentPath
+  }
+
+  return paths
+}
+
+function findTargetElementPath(ast: unknown, request: WireGridEditRequest) {
+  let result: AstNodePath | undefined
+
+  function visit(node: unknown, nodePath?: AstNodePath) {
+    if (!t.isNode(node) || result) {
+      return
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value)) {
+        for (let index = 0; index < value.length; index += 1) {
+          const child = value[index]
+
+          if (!t.isNode(child)) {
+            continue
+          }
+
+          const childPath = {
+            index,
+            key,
+            node: child,
+            parent: node,
+            parentPath: nodePath
+          }
+
+          if (t.isJSXElement(child) && isTargetElement(child, request)) {
+            result = childPath
+            return
+          }
+
+          visit(child, childPath)
+        }
+        continue
+      }
+
+      if (t.isNode(value)) {
+        const childPath = {
+          key,
+          node: value,
+          parent: node,
+          parentPath: nodePath
+        }
+
+        if (t.isJSXElement(value) && isTargetElement(value, request)) {
+          result = childPath
+          return
+        }
+
+        visit(value, childPath)
+      }
+    }
+  }
+
+  visit(ast)
+  return result
+}
+
+function removeJsxChild(path: AstNodePath | undefined) {
+  if (
+    !path ||
+    path.key !== "children" ||
+    path.index === undefined ||
+    (!t.isJSXElement(path.parent) && !t.isJSXFragment(path.parent))
+  ) {
+    return false
+  }
+
+  path.parent.children.splice(path.index, 1)
+  return true
+}
+
+function setNodePath(path: AstNodePath, value: t.Node) {
+  if (path.index !== undefined) {
+    const values = (path.parent as unknown as Record<string, unknown[]>)[path.key]
+    values[path.index] = value
+    return
+  }
+
+  ;(path.parent as unknown as Record<string, unknown>)[path.key] = value
+}
+
+function isMapCallback(
+  callback: t.ArrowFunctionExpression,
+  callbackPath: AstNodePath | undefined
+) {
+  if (!callbackPath || !t.isCallExpression(callbackPath.parent)) {
+    return false
+  }
+
+  const callee = callbackPath.parent.callee
+
+  return (
+    callbackPath.key === "arguments" &&
+    t.isMemberExpression(callee) &&
+    !callee.computed &&
+    t.isIdentifier(callee.property, { name: "map" }) &&
+    callbackPath.node === callback
+  )
 }
 
 export function applyClassTokenReplaceEdit(

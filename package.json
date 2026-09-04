@@ -12,6 +12,7 @@
     "docs:preview": "vitepress preview docs",
     "e2e": "playwright test",
     "dev:next": "pnpm --filter next-basic dev",
+    "dev:react": "pnpm --filter react-vite-basic dev",
     "lint": "oxlint .",
     "release": "pnpm build && changeset publish",
     "video:render": "remotion render remotion/index.ts WireGridProductDemo docs/public/tutorials/wire-grid-product-demo.mp4",

@@ -7,11 +7,98 @@ import {
   applyClassTokenReplaceEdit,
   applyInlineStyleEdit,
   applyJsxAttributeStringEdit,
+  applyJsxDeleteEdit,
   applyJsxTextEdit,
   previewEdit
 } from "../src/edit/apply-edit.js"
 
 describe("applyJsxTextEdit", () => {
+  it("deletes an ordinary JSX child", () => {
+    const result = applyJsxDeleteEdit(
+      `export function Page() {
+  return <main><section data-wg-id="target">Remove me</section><p>Keep me</p></main>
+}
+`,
+      {
+        source: { file: "src/Page.tsx", id: "target" },
+        edit: { kind: "jsx-delete" }
+      }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.code).not.toContain("Remove me")
+    expect(result.ok && result.code).toContain("Keep me")
+  })
+
+  it("removes a logical conditional when deleting its rendered element", () => {
+    const result = applyJsxDeleteEdit(
+      `export function Page({ visible }) {
+  return <main>{visible && <aside data-wg-id="target">Conditional</aside>}<p>Keep me</p></main>
+}
+`,
+      {
+        source: { file: "src/Page.tsx", id: "target" },
+        edit: { kind: "jsx-delete" }
+      }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.code).not.toContain("visible &&")
+    expect(result.ok && result.code).not.toContain("Conditional")
+    expect(result.ok && result.code).toContain("Keep me")
+  })
+
+  it("replaces only the selected ternary branch with null", () => {
+    const result = applyJsxDeleteEdit(
+      `export function Page({ ready }) {
+  return <main>{ready ? <p data-wg-id="target">Ready</p> : <p>Waiting</p>}</main>
+}
+`,
+      {
+        source: { file: "src/Page.tsx", id: "target" },
+        edit: { kind: "jsx-delete" }
+      }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.code).toContain("ready ? null : <p>Waiting</p>")
+  })
+
+  it("removes a filtered map expression when deleting its direct template", () => {
+    const result = applyJsxDeleteEdit(
+      `export function Page({ items }) {
+  return <main>{items.filter((item) => item.visible).map((item) => <article data-wg-id="target" key={item.id}>{item.label}</article>)}</main>
+}
+`,
+      {
+        source: { file: "src/Page.tsx", id: "target" },
+        edit: { kind: "jsx-delete" }
+      }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.code).not.toContain(".filter(")
+    expect(result.ok && result.code).not.toContain(".map(")
+  })
+
+  it("keeps a map wrapper when deleting a nested child", () => {
+    const result = applyJsxDeleteEdit(
+      `export function Page({ items }) {
+  return <main>{items.map((item) => <article key={item.id}><span data-wg-id="target">Badge</span><b>{item.label}</b></article>)}</main>
+}
+`,
+      {
+        source: { file: "src/Page.tsx", id: "target" },
+        edit: { kind: "jsx-delete" }
+      }
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.code).toContain("items.map")
+    expect(result.ok && result.code).not.toContain("Badge")
+    expect(result.ok && result.code).toContain("item.label")
+  })
+
   it("updates JSX text for the matching Wire Grid id", () => {
     const result = applyJsxTextEdit(
       `export default function Page() {
